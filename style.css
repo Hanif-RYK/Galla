@@ -715,6 +715,7 @@ body:has(.content-pos) .toasts { bottom: auto; top: calc(var(--topbar-h) + 14px)
   .cart { position: fixed; left: 0; right: 0; bottom: 0; height: min(86dvh, 720px); z-index: 50; border-left: 0; border-radius: 18px 18px 0 0; box-shadow: var(--shadow-pop); transform: translateY(105%); visibility: hidden; transition: transform .25s ease, visibility 0s linear .25s; }
   .cart-open .cart { transform: none; visibility: visible; transition: transform .25s ease; }
   .cart-open .cart-scrim { display: block; }
+  .cart-open body { overflow: hidden; } /* no page scroll behind the open sheet */
   .cart-scrim { position: fixed; inset: 0; background: rgba(15,14,12,.5); z-index: 45; }
   .cart-bar { display: flex; position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 44; height: 58px; border: 0; border-radius: 14px; background: var(--ink); color: var(--bg); align-items: center; justify-content: space-between; padding: 0 18px; font-weight: 700; font-size: 15px; box-shadow: var(--shadow-pop); cursor: pointer; }
   .cart-bar .mono { font-size: 17px; }
@@ -741,7 +742,19 @@ body:has(.content-pos) .toasts { bottom: auto; top: calc(var(--topbar-h) + 14px)
   .ptiles { padding-left: 14px; padding-right: 14px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
   .pay-due b { font-size: 34px; }
 }
+@page { margin: 12mm; }
+@page invoice { size: A4; margin: 12mm; }
+@page receipt { size: 80mm 297mm; margin: 0; }
 @media print {
+  /* Always print with the light colours, even when the screen is in dark mode */
+  [data-theme="dark"] {
+    --primary: #c23b22; --primary-strong: #9f2f1a; --primary-soft: #fbe7e1; --accent: #e6a23c; --accent-soft: #fcf0da;
+    --bg: #ffffff; --surface: #ffffff; --surface-2: #f9f8f5; --ink: #1c1d22; --ink-2: #4a4c55; --ink-3: #62656f; --line: #e6e3dc; --line-strong: #d3cfc6;
+    --success: #1d7a46; --success-soft: #e2f3e8; --warning: #b7791f; --warning-text: #8a5d19; --warning-soft: #fcf0d9;
+    --danger: #b8392a; --danger-soft: #fbe5e1; --info: #2c6585; --info-soft: #e2eef5;
+    --c3: #2f6f8f; --c4: #5f8a66; --c5: #8a5a9e;
+    color-scheme: light;
+  }
   .sidebar, .topbar, .footer, .no-print, .toasts { display: none !important; }
   .app { display: block; }
   .content { padding: 0; }
@@ -752,6 +765,10 @@ body:has(.content-pos) .toasts { bottom: auto; top: calc(var(--topbar-h) + 14px)
   body.print-receipt .print-area { display: block !important; }
   .print-area { display: none; }
   .print-area .receipt { box-shadow: none; max-width: 80mm; margin: 0 auto; -webkit-mask: none; mask: none; }
+  body.print-receipt .print-area { page: receipt; }
+  /* A4 invoice: one clean page, no on-screen padding */
+  .invoice { page: invoice; padding: 0; break-inside: auto; }
+  .invoice tr, .invoice .totals { break-inside: avoid; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }

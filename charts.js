@@ -199,7 +199,9 @@
     var t1 = el("text", { x: R, y: R - 2, "text-anchor": "middle", "class": "donut-center", "font-size": 24, "font-weight": 700, fill: "var(--ink)" }, svg);
     var t2 = el("text", { x: R, y: R + 18, "text-anchor": "middle", "font-size": 12, fill: "var(--ink-3)" }, svg);
     function center(a, b) { t1.textContent = b; t2.textContent = a; }
-    var reset = function () { center(cfg.centerLabel || "Total", cfg.centerValue || fmt(total, cfg)); };
+    // A centerValue starting with "$" follows the store currency too ("$5,377" → "Rs 5,377")
+    var cv = cfg.centerValue && window.Galla ? String(cfg.centerValue).replace(/^\$/, window.Galla.symbol()) : cfg.centerValue;
+    var reset = function () { center(cfg.centerLabel || "Total", cv || fmt(total, cfg)); };
     reset();
   }
 

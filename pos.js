@@ -38,9 +38,11 @@
     var disc = 0;
     if (discount && subtotal > 0) disc = discount.type === "percent" ? subtotal * discount.value / 100 : Math.min(discount.value, subtotal);
     var rate = Number(G.config.tax) || 0;
-    var tax = (subtotal - disc) * rate / 100;
-    var r2 = function (v) { return Math.round(v * 100) / 100; };
-    return { subtotal: r2(subtotal), discount: r2(disc), taxRate: rate, tax: r2(tax), total: r2(subtotal - disc + tax), items: cart.reduce(function (a, l) { return a + l.qty; }, 0) };
+    // Round each part to cents first, so the lines printed on the receipt always add up to the total
+    var r2 = function (v) { return Math.round((v + Number.EPSILON) * 100) / 100; };
+    subtotal = r2(subtotal); disc = r2(disc);
+    var tax = r2((subtotal - disc) * rate / 100);
+    return { subtotal: subtotal, discount: disc, taxRate: rate, tax: tax, total: r2(subtotal - disc + tax), items: cart.reduce(function (a, l) { return a + l.qty; }, 0) };
   }
 
   /* ---------- Render ---------- */
@@ -83,7 +85,7 @@
     var p = products[id]; if (!p) return;
     var line = cart.filter(function (l) { return l.id === id; })[0];
     var want = (line ? line.qty : 0) + (qty || 1);
-    if (want > p.stock) { toast("Only " + p.stock + " " + p.name + " left in stock"); return; }
+    if (want > p.stock) { toast(p.stock > 0 ? "Only " + p.stock + " " + p.name + " left in stock" : p.name + " is out of stock"); return; }
     if (line) line.qty = want; else cart.push({ id: id, name: p.name, price: p.price, qty: qty || 1 });
     p.tile.classList.remove("bump"); void p.tile.offsetWidth; p.tile.classList.add("bump");
     render();
@@ -141,27 +143,39 @@
     });
   });
   document.addEventListener("keydown", function (e) {
-    if (e.key === "F2") { e.preventDefault(); search.focus(); search.select(); }
-    if (e.key === "F9" && cart.length && !document.querySelector(".modal.open")) { e.preventDefault(); openPay(); }
+    // Shortcuts are ignored while a window (payment, discount …) is open, so focus stays inside it
+    if (document.querySelector(".modal.open")) return;
+    if (e.key === "F2") { e.preventDefault(); closeSheet(); search.focus(); search.select(); }
+    if (e.key === "F9" && cart.length) { e.preventDefault(); openPay(); }
   });
 
   /* ---------- Customer ---------- */
   var customerSel = $("[data-pos-customer]");
 
   /* ---------- Discount ---------- */
-  var dType = "percent";
+  var dType = "percent", discInput = $("#disc-value");
+  function setDiscType(type) {
+    dType = type;
+    $$("[data-discount-type]").forEach(function (x) { x.setAttribute("aria-pressed", x.getAttribute("data-discount-type") === type); });
+    $("[data-discount-unit]").textContent = type === "percent" ? "%" : G.symbol().trim();
+  }
   $$("[data-discount-type]").forEach(function (b) {
+    b.addEventListener("click", function () { setDiscType(b.getAttribute("data-discount-type")); });
+  });
+  // Opening the window shows the discount already on the sale (or an empty field) instead of the last typed value
+  $$("[data-modal-open='discount']").forEach(function (b) {
     b.addEventListener("click", function () {
-      dType = b.getAttribute("data-discount-type");
-      $$("[data-discount-type]").forEach(function (x) { x.setAttribute("aria-pressed", x === b); });
-      $("[data-discount-unit]").textContent = dType === "percent" ? "%" : G.symbol().trim();
+      setDiscType(discount ? discount.type : "percent");
+      discInput.value = discount ? discount.value : "";
+      discInput.classList.remove("is-invalid"); discInput.removeAttribute("aria-invalid");
     });
   });
+  discInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); $("[data-discount-apply]").click(); } });
   $$("[data-discount-quick]").forEach(function (b) {
-    b.addEventListener("click", function () { $("[data-discount-type='percent']").click(); $("#disc-value").value = b.getAttribute("data-discount-quick"); });
+    b.addEventListener("click", function () { setDiscType("percent"); discInput.value = b.getAttribute("data-discount-quick"); discInput.classList.remove("is-invalid"); discInput.removeAttribute("aria-invalid"); });
   });
   $("[data-discount-apply]").addEventListener("click", function () {
-    var input = $("#disc-value"), v = parseFloat(String(input.value).replace(",", "."));
+    var input = discInput, v = parseFloat(String(input.value).replace(",", "."));
     var bad = !(v > 0) || (dType === "percent" && v > 100);
     input.classList.toggle("is-invalid", bad); input.setAttribute("aria-invalid", bad);
     if (bad) { input.focus(); return; }
@@ -270,7 +284,7 @@
       var st = $(".st", p.tile); st.textContent = p.stock > 0 ? p.stock + " left" : "Out of stock";
       st.classList.toggle("low", p.stock > 0 && p.stock <= 10); p.tile.disabled = p.stock <= 0;
     });
-    closeModal("payment");
+    closeModal("payment"); closeSheet(false);
     $("[data-receipt]").innerHTML = G.receipt(sale);
     $$("[data-receipt-title]").forEach(function (el) { el.textContent = "Sale complete · " + sale.no; });
     $$("[data-view-receipt]").forEach(function (a) { a.href = "receipt.html?no=" + encodeURIComponent(sale.no); });
@@ -281,8 +295,21 @@
   $("[data-new-sale]").addEventListener("click", function () { closeModal("receipt-modal"); search.focus(); });
 
   /* ---------- Mobile cart sheet ---------- */
-  $$("[data-cart-open]").forEach(function (b) { b.addEventListener("click", function () { document.documentElement.classList.add("cart-open"); }); });
-  $$("[data-cart-close]").forEach(function (b) { b.addEventListener("click", function () { document.documentElement.classList.remove("cart-open"); }); });
+  var root = document.documentElement, cartBar = $("[data-cart-open]");
+  function closeSheet(refocus) {
+    if (!root.classList.contains("cart-open")) return;
+    root.classList.remove("cart-open");
+    if (refocus !== false && cartBar && getComputedStyle(cartBar).display !== "none") cartBar.focus();
+  }
+  $$("[data-cart-open]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      root.classList.add("cart-open");
+      var c = $(".cart-close", pos); if (c) setTimeout(function () { c.focus(); }, 60);
+    });
+  });
+  $$("[data-cart-close]").forEach(function (b) { b.addEventListener("click", function () { closeSheet(); }); });
+  // Esc closes the sheet, unless a window is open on top of it (then Esc closes only that window)
+  window.addEventListener("keydown", function (e) { if (e.key === "Escape" && !document.querySelector(".modal.open")) closeSheet(); }, true);
 
   $$("[data-sale-no]").forEach(function (el) { el.textContent = "#" + saleNo(); });
   render();

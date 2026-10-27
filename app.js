@@ -27,9 +27,13 @@
   /* Sidebar -------------------------------------------------------------- */
   if (store.get("galla-collapsed") === "1") root.classList.add("sidebar-collapsed");
   $$("[data-sidebar-collapse]").forEach(function (b) {
+    b.setAttribute("aria-controls", "sidebar");
+    var label = function (c) { b.setAttribute("aria-expanded", !c); b.setAttribute("aria-label", c ? "Expand sidebar" : "Collapse sidebar"); };
+    label(root.classList.contains("sidebar-collapsed"));
     b.addEventListener("click", function () {
       var on = root.classList.toggle("sidebar-collapsed");
       store.set("galla-collapsed", on ? "1" : "0");
+      label(on);
       setTimeout(function () { window.GallaCharts && window.GallaCharts.renderAll(); }, 30);
     });
   });
@@ -60,6 +64,10 @@
       dd.classList.toggle("open", open);
       btn.setAttribute("aria-expanded", open);
     });
+    // Close the menu when keyboard focus moves out of it
+    dd.addEventListener("focusout", function (e) {
+      if (e.relatedTarget && !dd.contains(e.relatedTarget) && dd.classList.contains("open")) { dd.classList.remove("open"); btn.setAttribute("aria-expanded", "false"); }
+    });
   });
   function closeDropdowns() {
     $$("[data-dropdown].open").forEach(function (d) { d.classList.remove("open"); var b = $("[data-dropdown-toggle]", d); if (b) b.setAttribute("aria-expanded", "false"); });
@@ -75,7 +83,9 @@
     m.classList.add("open");
     m.setAttribute("aria-hidden", "false");
     document.body.style.overflow = "hidden";
-    var f = $("input, select, textarea, button:not([data-modal-close])", m);
+    // Focus the first visible field or button (hidden file inputs are skipped), else the close button
+    var vis = function (x) { return x.offsetParent !== null; };
+    var f = $$("input:not([type=hidden]), select, textarea, button:not([data-modal-close]), [tabindex='0']", m).filter(vis)[0] || $$("[data-modal-close]", m).filter(vis)[0];
     if (f) setTimeout(function () { if (!m.contains(document.activeElement)) f.focus(); }, 30);
   }
   function closeModal(m) {
@@ -375,6 +385,11 @@
       }
     });
     if (vals.amount) { var amt = Number(String(vals.amount).replace(/[^0-9.]/g, "") || 0); vals.money = window.Galla ? window.Galla.fmt(amt) : "$" + amt.toFixed(2); }
+    // {fieldMoney} = any decimal field (cost, price …) in the store currency, or "—" when left empty
+    $$("input[inputmode=decimal][name]", form).forEach(function (f) {
+      var raw = String(vals[f.name] || "").replace(/[^0-9.]/g, "");
+      vals[f.name + "Money"] = raw ? (window.Galla ? window.Galla.fmt(Number(raw)) : "$" + Number(raw).toFixed(2)) : "—";
+    });
     var html = tpl.innerHTML.replace(/\{(\w+)\}/g, function (_, k) { return k in vals ? esc(vals[k]) : ""; });
     var holder = document.createElement(target.tagName === "TBODY" || target.hasAttribute("data-table") ? "tbody" : "div");
     holder.innerHTML = html.trim();
@@ -384,11 +399,16 @@
     else target.insertBefore(el, target.firstChild);
     bindWithin(el);
   }
-  // Re-bind dropdowns and toasts inside newly added rows
+  // Re-bind dropdowns and toasts inside newly added rows, and show their prices in the store currency
   function bindWithin(el) {
+    if (window.Galla) $$("[data-money]", el).forEach(function (m) { m.textContent = window.Galla.fmt(m.getAttribute("data-money")); });
     $$("[data-dropdown]", el).forEach(function (dd) {
       var btn = $("[data-dropdown-toggle]", dd);
-      btn.addEventListener("click", function (e) { e.stopPropagation(); var open = !dd.classList.contains("open"); closeDropdowns(); dd.classList.toggle("open", open); });
+      btn.setAttribute("aria-haspopup", "true"); btn.setAttribute("aria-expanded", "false");
+      btn.addEventListener("click", function (e) { e.stopPropagation(); var open = !dd.classList.contains("open"); closeDropdowns(); dd.classList.toggle("open", open); btn.setAttribute("aria-expanded", open); });
+      dd.addEventListener("focusout", function (e) {
+        if (e.relatedTarget && !dd.contains(e.relatedTarget) && dd.classList.contains("open")) { dd.classList.remove("open"); btn.setAttribute("aria-expanded", "false"); }
+      });
     });
     $$("[data-toast]", el).forEach(function (b) { b.addEventListener("click", function () { closeDropdowns(); toast(b.getAttribute("data-toast")); }); });
   }
@@ -416,7 +436,18 @@
        data-export-table   → the table inside the nearest [data-table] (current search/filter applied)
        data-export-chart="#chartId" → labels + series from a chart
        data-export-items="selector" → elements with data-csv='{"Column":"value",...}' */
-  function csvCell(v) { v = String(v == null ? "" : v).replace(/\s+/g, " ").trim(); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+  function csvCell(v) {
+    v = String(v == null ? "" : v).replace(/\s+/g, " ").trim();
+    // Text starting with = + - @ would run as a formula in Excel (phone "+1 555 …"); plain numbers like -12.50 stay as they are
+    if (/^[=+\-@]/.test(v) && !/^-?[^\d\s]{0,4}\s?[\d,]+(\.\d+)?%?$/.test(v)) v = "'" + v;
+    return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  }
+  // Text of a table cell with a space between its parts ("Shop rent" + "EX-612"), skipping hidden icons and initials
+  function cellText(td) {
+    var out = [], w = document.createTreeWalker(td, NodeFilter.SHOW_TEXT), n;
+    while ((n = w.nextNode())) if (!n.parentNode.closest("[aria-hidden=true], .sr-only, svg")) out.push(n.textContent);
+    return out.join(" ").replace(/\s+/g, " ").trim();
+  }
   function download(name, rowsArr) {
     var csv = rowsArr.map(function (r) { return r.map(csvCell).join(","); }).join("\r\n");
     var blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
@@ -433,7 +464,7 @@
         var wrap = b.closest("[data-table]"), table = $("table", wrap);
         var keep = $$("th", table).map(function (th, i) { return th.textContent.trim() && !$("input", th) && !$(".sr-only", th) ? i : -1; }).filter(function (i) { return i > -1; });
         out.push(keep.map(function (i) { return $$("th", table)[i].textContent.trim(); }));
-        wrap.gallaTable.visibleRows().forEach(function (tr) { out.push(keep.map(function (i) { var td = tr.children[i]; var b2 = $(".person b", td); var sm = $(".person small", td); return b2 ? b2.textContent + (sm && sm.textContent.indexOf("@") > -1 ? " <" + sm.textContent + ">" : "") : td.textContent.trim(); })); });
+        wrap.gallaTable.visibleRows().forEach(function (tr) { out.push(keep.map(function (i) { var td = tr.children[i]; var b2 = $(".person b", td); var sm = $(".person small", td); return b2 ? b2.textContent + (sm && sm.textContent.indexOf("@") > -1 ? " <" + sm.textContent + ">" : "") : cellText(td); })); });
       } else if (b.hasAttribute("data-export-chart")) {
         var cfg = JSON.parse($(b.getAttribute("data-export-chart")).getAttribute("data-chart"));
         out.push(["Label"].concat(cfg.series.map(function (s) { return s.name + (cfg.suffix === "k" ? " (thousands)" : ""); })));
@@ -567,7 +598,7 @@
     },
     applyConfig: function () {
       $$("[data-money]").forEach(function (el) { el.textContent = Galla.fmt(el.getAttribute("data-money")); });
-      $$("[data-currency]").forEach(function (el) { el.textContent = Galla.symbol().trim(); });
+      $$("[data-currency]").forEach(function (el) { el.textContent = Galla.symbol(); });
       $$("[data-store]").forEach(function (el) { var v = G[el.getAttribute("data-store")]; if (v != null) el.textContent = v; });
     },
     /* Sales made on the POS page are kept in this browser (localStorage "galla-sales") */
@@ -669,7 +700,14 @@
     var sample = { no: "R-10483", date: new Date().toISOString(), cashier: "Sana Khan", customer: "", method: "Cash", tendered: 20,
       lines: [{ name: "Cold Brew Coffee 330ml", price: 3.5, qty: 2 }, { name: "Butter Croissant", price: 1.8, qty: 3 }],
       subtotal: 12.4, discount: 0, taxRate: 8, tax: 0.99, total: 13.39 };
-    function fill() { fields.forEach(function (f) { var v = G[f.getAttribute("data-store-field")]; if (v != null) f.value = f.defaultValue = v; }); }
+    function fill() {
+      fields.forEach(function (f) {
+        var v = G[f.getAttribute("data-store-field")]; if (v == null) return;
+        // The saved currency is trimmed ("Rs"), the option value may not be ("Rs "): pick the matching option
+        if (f.tagName === "SELECT") { $$("option", f).forEach(function (o) { o.selected = o.defaultSelected = o.value.trim() === String(v).trim(); }); return; }
+        f.value = f.defaultValue = v;
+      });
+    }
     function draw() {
       if (!preview) return;
       var saved = {}; fields.forEach(function (f) { var k = f.getAttribute("data-store-field"); saved[k] = G[k]; G[k] = k === "tax" ? (parseFloat(f.value) || 0) : f.value; });

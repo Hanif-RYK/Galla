@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
@@ -29,9 +29,9 @@
       </section>
       <section class="tab-panel" id="lp2" role="tabpanel" aria-labelledby="lt2" hidden>
         <form data-validate data-redirect="index.html">
-          <div class="field"><label class="label" for="l-email">Email</label><input class="input" id="l-email" type="email" required autocomplete="email" value="hanif@cornerbasket.example"><span class="error-text">Enter a valid email address.</span></div>
+          <div class="field"><label class="label" for="l-email">Email</label><input class="input" id="l-email" maxlength="100" type="email" required autocomplete="email" value="hanif@cornerbasket.example"><span class="error-text">Enter a valid email address.</span></div>
           <div class="field"><label class="label" for="l-pass">Password</label>
-            <div class="input-wrap"><input class="input" id="l-pass" type="password" required minlength="6" autocomplete="current-password" value="demo-password"><button class="icon-btn" type="button" data-password-toggle aria-label="Show password"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
+            <div class="input-wrap"><input class="input" id="l-pass" maxlength="64" type="password" required minlength="6" autocomplete="current-password" value="demo-password"><button class="icon-btn" type="button" data-password-toggle aria-label="Show password"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
             <span class="error-text">Use at least 6 characters.</span></div>
           <button class="btn btn-primary btn-lg btn-block mt-24" type="submit">Sign in</button>
           <p class="small muted mt-16 mb-0">Demo: the form checks the fields in your browser only. Connect it to your own login system.</p>
@@ -41,8 +41,8 @@
     <p class="small muted mb-0">© <span data-year>2026</span> Galla POS. All rights reserved.</p>
   </div>
   <aside class="auth-art" aria-hidden="true">
-    <div class="receipt" aria-hidden="true"><div class="r-head"><b>CORNER BASKET</b><small>Register 1 · 08:00</small></div><hr class="r-rule">
-<div class="r-line"><span>Fresh Milk 1L  ×2</span><span>$3.80</span></div><div class="r-line"><span>Sourdough Loaf</span><span>$4.50</span></div><div class="r-line"><span>Bananas, 1kg</span><span>$1.60</span></div><div class="r-line"><span>Tax 8%</span><span>$0.79</span></div><hr class="r-rule"><div class="r-sum r-total"><span>TOTAL</span><span>$10.69</span></div><div class="r-code"></div><div class="r-foot">Paid by card · Thank you!</div></div>
+    <div class="receipt" aria-hidden="true" data-mini-receipt><div class="r-head"><b data-store="name">Corner Basket</b><small>Register 1 · 08:00</small></div><hr class="r-rule">
+<div class="r-line"><span>Fresh Milk 1L ×2</span><span data-money="3.80" data-line-total>$3.80</span></div><div class="r-line"><span>Sourdough Loaf</span><span data-money="4.50" data-line-total>$4.50</span></div><div class="r-line"><span>Bananas, 1kg</span><span data-money="1.60" data-line-total>$1.60</span></div><div class="r-line"><span>Tax <span data-mini-tax-rate>8</span>%</span><span data-money="0.79" data-mini-tax>$0.79</span></div><hr class="r-rule"><div class="r-sum r-total"><span>TOTAL</span><span data-money="10.69" data-mini-total>$10.69</span></div><div class="r-code"></div><div class="r-foot">Paid by card · Thank you!</div></div>
     <p>Ring up a sale in seconds, keep stock right and close the day with numbers you trust.</p>
   </aside>
 </main>

@@ -14,10 +14,8 @@
     if (parent) parent.appendChild(n);
     return n;
   }
-  function color(i) {
-    var v = getComputedStyle(document.documentElement).getPropertyValue("--c" + ((i % 5) + 1));
-    return v.trim() || "#c23b22";
-  }
+  // Series colours are CSS variables, so charts follow light/dark mode and print with the light colours
+  function color(i) { return "var(--c" + ((i % 5) + 1) + ")"; }
   // Round the axis maximum so 4 gridlines land on friendly numbers (0, 25, 50, 75, 100 …)
   function niceMax(v) {
     if (v <= 0) return 4;
@@ -199,7 +197,9 @@
     var t1 = el("text", { x: R, y: R - 2, "text-anchor": "middle", "class": "donut-center", "font-size": 24, "font-weight": 700, fill: "var(--ink)" }, svg);
     var t2 = el("text", { x: R, y: R + 18, "text-anchor": "middle", "font-size": 12, fill: "var(--ink-3)" }, svg);
     function center(a, b) { t1.textContent = b; t2.textContent = a; }
-    var reset = function () { center(cfg.centerLabel || "Total", cfg.centerValue || fmt(total, cfg)); };
+    // A centerValue starting with "$" follows the store currency too ("$5,377" → "Rs 5,377")
+    var cv = cfg.centerValue && window.Galla ? String(cfg.centerValue).replace(/^\$/, window.Galla.symbol()) : cfg.centerValue;
+    var reset = function () { center(cfg.centerLabel || "Total", cv || fmt(total, cfg)); };
     reset();
   }
 
@@ -229,6 +229,15 @@
     else lineChart(box, cfg);
   }
   function renderAll(root) { (root || document).querySelectorAll("[data-chart]").forEach(render); }
+
+  // Reserve each chart's height straight away, so the page does not jump when the charts are drawn
+  document.querySelectorAll("[data-chart]").forEach(function (box) {
+    try {
+      var cfg = JSON.parse(box.getAttribute("data-chart"));
+      if (cfg.type === "donut") box.style.minHeight = (cfg.size || 170) + "px";
+      else if (cfg.type !== "spark") box.style.minHeight = (cfg.height || 280) + "px";
+    } catch (e) { /* drawn as nothing */ }
+  });
 
   var rt;
   window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(renderAll, 150); });

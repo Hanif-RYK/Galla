@@ -26,10 +26,30 @@
     products[t.dataset.id] = { id: t.dataset.id, name: t.dataset.name, price: +t.dataset.price, stock: +t.dataset.stock, cat: t.dataset.cat, sku: t.dataset.sku, barcode: t.dataset.barcode, tile: t };
   });
 
+  // Stock already sold on this POS in this browser (localStorage "galla-stock") is taken off the tiles
+  var sold = G.stockSold();
+  function showTileStock(p) {
+    var st = $(".st", p.tile); st.textContent = p.stock > 0 ? p.stock + " left" : "Out of stock";
+    st.classList.toggle("low", p.stock > 0 && p.stock <= 10); p.tile.disabled = p.stock <= 0;
+  }
+  Object.keys(products).forEach(function (id) {
+    var p = products[id];
+    if (sold[p.sku]) { p.stock = Math.max(0, p.stock - sold[p.sku]); showTileStock(p); }
+  });
+
   var cart = [];            // [{id, name, price, qty}]
   var discount = null;      // {type: "percent"|"amount", value}
-  var heldOrders = mem.get("galla-held") || [];
-  var lastNo = Math.max(10482, +((G.sales()[0] || {}).no || "R-0").slice(2));
+  // Held sales from storage are kept only if they still look like held sales (old or hand-edited data is dropped)
+  var heldOrders = (function (v) {
+    return Array.isArray(v) ? v.filter(function (h) {
+      return h && Array.isArray(h.cart) && h.cart.length && h.cart.every(function (l) { return l && products[l.id] && typeof l.qty === "number" && l.qty > 0; });
+    }).map(function (h) {
+      var d = h.discount && (h.discount.type === "percent" || h.discount.type === "amount") && h.discount.value > 0 ? { type: h.discount.type, value: Number(h.discount.value) } : null;
+      return { at: isNaN(new Date(h.at)) ? new Date().toISOString() : h.at, cart: h.cart.map(function (l) { var p = products[l.id]; return { id: l.id, name: p.name, price: p.price, qty: Math.floor(l.qty) }; }),
+        discount: d, customer: typeof h.customer === "string" ? h.customer : "", total: Number(h.total) || 0 };
+    }) : [];
+  })(mem.get("galla-held"));
+  var lastNo = G.sales().reduce(function (m, s) { return Math.max(m, +s.no.slice(2) || 0); }, 10482);
   var saleNo = function () { return "R-" + (lastNo + 1); };
 
   /* ---------- Totals ---------- */
@@ -38,9 +58,11 @@
     var disc = 0;
     if (discount && subtotal > 0) disc = discount.type === "percent" ? subtotal * discount.value / 100 : Math.min(discount.value, subtotal);
     var rate = Number(G.config.tax) || 0;
-    var tax = (subtotal - disc) * rate / 100;
-    var r2 = function (v) { return Math.round(v * 100) / 100; };
-    return { subtotal: r2(subtotal), discount: r2(disc), taxRate: rate, tax: r2(tax), total: r2(subtotal - disc + tax), items: cart.reduce(function (a, l) { return a + l.qty; }, 0) };
+    // Round each part to cents first, so the lines printed on the receipt always add up to the total
+    var r2 = function (v) { return Math.round((v + Number.EPSILON) * 100) / 100; };
+    subtotal = r2(subtotal); disc = r2(disc);
+    var tax = r2((subtotal - disc) * rate / 100);
+    return { subtotal: subtotal, discount: disc, taxRate: rate, tax: tax, total: r2(subtotal - disc + tax), items: cart.reduce(function (a, l) { return a + l.qty; }, 0) };
   }
 
   /* ---------- Render ---------- */
@@ -83,7 +105,7 @@
     var p = products[id]; if (!p) return;
     var line = cart.filter(function (l) { return l.id === id; })[0];
     var want = (line ? line.qty : 0) + (qty || 1);
-    if (want > p.stock) { toast("Only " + p.stock + " " + p.name + " left in stock"); return; }
+    if (want > p.stock) { toast(p.stock > 0 ? "Only " + p.stock + " " + p.name + " left in stock" : p.name + " is out of stock"); return; }
     if (line) line.qty = want; else cart.push({ id: id, name: p.name, price: p.price, qty: qty || 1 });
     p.tile.classList.remove("bump"); void p.tile.offsetWidth; p.tile.classList.add("bump");
     render();
@@ -106,7 +128,10 @@
     else if (e.target.closest("[data-rm]")) setQty(i, 0);
   });
   linesBox.addEventListener("change", function (e) {
-    if (e.target.matches("[data-qty]")) setQty(+e.target.closest("[data-line]").dataset.line, e.target.value);
+    if (!e.target.matches("[data-qty]")) return;
+    // An empty or unreadable quantity puts the old one back; 0 removes the line
+    if (e.target.value.trim() === "" || isNaN(Number(e.target.value))) { render(); return; }
+    setQty(+e.target.closest("[data-line]").dataset.line, e.target.value);
   });
 
   /* ---------- Search, barcode and category filter ---------- */
@@ -141,27 +166,39 @@
     });
   });
   document.addEventListener("keydown", function (e) {
-    if (e.key === "F2") { e.preventDefault(); search.focus(); search.select(); }
-    if (e.key === "F9" && cart.length && !document.querySelector(".modal.open")) { e.preventDefault(); openPay(); }
+    // Shortcuts are ignored while a window (payment, discount …) is open, so focus stays inside it
+    if (document.querySelector(".modal.open")) return;
+    if (e.key === "F2") { e.preventDefault(); closeSheet(); search.focus(); search.select(); }
+    if (e.key === "F9" && cart.length) { e.preventDefault(); openPay(); }
   });
 
   /* ---------- Customer ---------- */
   var customerSel = $("[data-pos-customer]");
 
   /* ---------- Discount ---------- */
-  var dType = "percent";
+  var dType = "percent", discInput = $("#disc-value");
+  function setDiscType(type) {
+    dType = type;
+    $$("[data-discount-type]").forEach(function (x) { x.setAttribute("aria-pressed", x.getAttribute("data-discount-type") === type); });
+    $("[data-discount-unit]").textContent = type === "percent" ? "%" : G.symbol().trim();
+  }
   $$("[data-discount-type]").forEach(function (b) {
+    b.addEventListener("click", function () { setDiscType(b.getAttribute("data-discount-type")); });
+  });
+  // Opening the window shows the discount already on the sale (or an empty field) instead of the last typed value
+  $$("[data-modal-open='discount']").forEach(function (b) {
     b.addEventListener("click", function () {
-      dType = b.getAttribute("data-discount-type");
-      $$("[data-discount-type]").forEach(function (x) { x.setAttribute("aria-pressed", x === b); });
-      $("[data-discount-unit]").textContent = dType === "percent" ? "%" : G.symbol().trim();
+      setDiscType(discount ? discount.type : "percent");
+      discInput.value = discount ? discount.value : "";
+      discInput.classList.remove("is-invalid"); discInput.removeAttribute("aria-invalid");
     });
   });
+  discInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); $("[data-discount-apply]").click(); } });
   $$("[data-discount-quick]").forEach(function (b) {
-    b.addEventListener("click", function () { $("[data-discount-type='percent']").click(); $("#disc-value").value = b.getAttribute("data-discount-quick"); });
+    b.addEventListener("click", function () { setDiscType("percent"); discInput.value = b.getAttribute("data-discount-quick"); discInput.classList.remove("is-invalid"); discInput.removeAttribute("aria-invalid"); });
   });
   $("[data-discount-apply]").addEventListener("click", function () {
-    var input = $("#disc-value"), v = parseFloat(String(input.value).replace(",", "."));
+    var input = discInput, v = parseFloat(String(input.value).replace(",", "."));
     var bad = !(v > 0) || (dType === "percent" && v > 100);
     input.classList.toggle("is-invalid", bad); input.setAttribute("aria-invalid", bad);
     if (bad) { input.focus(); return; }
@@ -202,8 +239,17 @@
     if (r) {
       if (cart.length) { toast("Finish or hold the current sale first"); return; }
       var h = heldOrders.splice(+r.dataset.resume, 1)[0];
-      cart = h.cart; discount = h.discount; customerSel.value = h.customer || "";
-      mem.set("galla-held", heldOrders); closeModal("held-orders"); render(); toast("Held sale resumed");
+      // Stock may have been sold since the sale was held: lower quantities to what is left
+      var changed = [];
+      cart = h.cart.filter(function (l) {
+        var left = products[l.id].stock;
+        if (l.qty > left) { changed.push(left > 0 ? l.name + " (only " + left + " left)" : l.name + " (out of stock)"); l.qty = left; }
+        return l.qty > 0;
+      });
+      discount = h.discount;
+      customerSel.value = $$("option", customerSel).some(function (o) { return o.value === h.customer; }) ? h.customer : "";
+      mem.set("galla-held", heldOrders); closeModal("held-orders"); render();
+      toast(changed.length ? "Held sale resumed. Changed to match stock: " + changed.join(", ") : "Held sale resumed");
     } else if (d) {
       heldOrders.splice(+d.dataset.drop, 1); mem.set("galla-held", heldOrders); renderHeld(); render();
     }
@@ -264,13 +310,10 @@
       subtotal: t.subtotal, discount: t.discount, taxRate: t.taxRate, tax: t.tax, total: t.total
     };
     saveSale(sale); lastSale = sale; lastNo++;
-    // Lower the stock shown on the tiles
-    cart.forEach(function (l) {
-      var p = products[l.id]; p.stock -= l.qty;
-      var st = $(".st", p.tile); st.textContent = p.stock > 0 ? p.stock + " left" : "Out of stock";
-      st.classList.toggle("low", p.stock > 0 && p.stock <= 10); p.tile.disabled = p.stock <= 0;
-    });
-    closeModal("payment");
+    // Lower the stock on the tiles and remember it (localStorage "galla-stock"), so it stays lower after a reload
+    G.recordSold(cart.map(function (l) { return { sku: products[l.id].sku, qty: l.qty }; }));
+    cart.forEach(function (l) { var p = products[l.id]; p.stock = Math.max(0, p.stock - l.qty); showTileStock(p); });
+    closeModal("payment"); closeSheet(false);
     $("[data-receipt]").innerHTML = G.receipt(sale);
     $$("[data-receipt-title]").forEach(function (el) { el.textContent = "Sale complete · " + sale.no; });
     $$("[data-view-receipt]").forEach(function (a) { a.href = "receipt.html?no=" + encodeURIComponent(sale.no); });
@@ -281,8 +324,21 @@
   $("[data-new-sale]").addEventListener("click", function () { closeModal("receipt-modal"); search.focus(); });
 
   /* ---------- Mobile cart sheet ---------- */
-  $$("[data-cart-open]").forEach(function (b) { b.addEventListener("click", function () { document.documentElement.classList.add("cart-open"); }); });
-  $$("[data-cart-close]").forEach(function (b) { b.addEventListener("click", function () { document.documentElement.classList.remove("cart-open"); }); });
+  var root = document.documentElement, cartBar = $("[data-cart-open]");
+  function closeSheet(refocus) {
+    if (!root.classList.contains("cart-open")) return;
+    root.classList.remove("cart-open");
+    if (refocus !== false && cartBar && getComputedStyle(cartBar).display !== "none") cartBar.focus();
+  }
+  $$("[data-cart-open]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      root.classList.add("cart-open");
+      var c = $(".cart-close", pos); if (c) setTimeout(function () { c.focus(); }, 60);
+    });
+  });
+  $$("[data-cart-close]").forEach(function (b) { b.addEventListener("click", function () { closeSheet(); }); });
+  // Esc closes the sheet, unless a window is open on top of it (then Esc closes only that window)
+  window.addEventListener("keydown", function (e) { if (e.key === "Escape" && !document.querySelector(".modal.open")) closeSheet(); }, true);
 
   $$("[data-sale-no]").forEach(function (el) { el.textContent = "#" + saleNo(); });
   render();

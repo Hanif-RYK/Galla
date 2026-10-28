@@ -18,13 +18,13 @@
   font-family: "Figtree";
   src: url("figtree-latin-wght-normal.woff2") format("woff2");
   font-weight: 300 900;
-  font-display: swap;
+  font-display: block; /* local files load at once; no reflow when they arrive */
 }
 @font-face {
   font-family: "JetBrains Mono";
   src: url("jetbrains-mono-latin-wght-normal.woff2") format("woff2");
   font-weight: 100 800;
-  font-display: swap;
+  font-display: block; /* local files load at once; no reflow when they arrive */
 }
 
 /* 2. Tokens ------------------------------------------------------------ */

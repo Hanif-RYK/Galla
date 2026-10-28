@@ -14,10 +14,8 @@
     if (parent) parent.appendChild(n);
     return n;
   }
-  function color(i) {
-    var v = getComputedStyle(document.documentElement).getPropertyValue("--c" + ((i % 5) + 1));
-    return v.trim() || "#c23b22";
-  }
+  // Series colours are CSS variables, so charts follow light/dark mode and print with the light colours
+  function color(i) { return "var(--c" + ((i % 5) + 1) + ")"; }
   // Round the axis maximum so 4 gridlines land on friendly numbers (0, 25, 50, 75, 100 …)
   function niceMax(v) {
     if (v <= 0) return 4;
@@ -231,6 +229,15 @@
     else lineChart(box, cfg);
   }
   function renderAll(root) { (root || document).querySelectorAll("[data-chart]").forEach(render); }
+
+  // Reserve each chart's height straight away, so the page does not jump when the charts are drawn
+  document.querySelectorAll("[data-chart]").forEach(function (box) {
+    try {
+      var cfg = JSON.parse(box.getAttribute("data-chart"));
+      if (cfg.type === "donut") box.style.minHeight = (cfg.size || 170) + "px";
+      else if (cfg.type !== "spark") box.style.minHeight = (cfg.height || 280) + "px";
+    } catch (e) { /* drawn as nothing */ }
+  });
 
   var rt;
   window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(renderAll, 150); });

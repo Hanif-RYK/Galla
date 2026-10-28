@@ -26,10 +26,30 @@
     products[t.dataset.id] = { id: t.dataset.id, name: t.dataset.name, price: +t.dataset.price, stock: +t.dataset.stock, cat: t.dataset.cat, sku: t.dataset.sku, barcode: t.dataset.barcode, tile: t };
   });
 
+  // Stock already sold on this POS in this browser (localStorage "galla-stock") is taken off the tiles
+  var sold = G.stockSold();
+  function showTileStock(p) {
+    var st = $(".st", p.tile); st.textContent = p.stock > 0 ? p.stock + " left" : "Out of stock";
+    st.classList.toggle("low", p.stock > 0 && p.stock <= 10); p.tile.disabled = p.stock <= 0;
+  }
+  Object.keys(products).forEach(function (id) {
+    var p = products[id];
+    if (sold[p.sku]) { p.stock = Math.max(0, p.stock - sold[p.sku]); showTileStock(p); }
+  });
+
   var cart = [];            // [{id, name, price, qty}]
   var discount = null;      // {type: "percent"|"amount", value}
-  var heldOrders = mem.get("galla-held") || [];
-  var lastNo = Math.max(10482, +((G.sales()[0] || {}).no || "R-0").slice(2));
+  // Held sales from storage are kept only if they still look like held sales (old or hand-edited data is dropped)
+  var heldOrders = (function (v) {
+    return Array.isArray(v) ? v.filter(function (h) {
+      return h && Array.isArray(h.cart) && h.cart.length && h.cart.every(function (l) { return l && products[l.id] && typeof l.qty === "number" && l.qty > 0; });
+    }).map(function (h) {
+      var d = h.discount && (h.discount.type === "percent" || h.discount.type === "amount") && h.discount.value > 0 ? { type: h.discount.type, value: Number(h.discount.value) } : null;
+      return { at: isNaN(new Date(h.at)) ? new Date().toISOString() : h.at, cart: h.cart.map(function (l) { var p = products[l.id]; return { id: l.id, name: p.name, price: p.price, qty: Math.floor(l.qty) }; }),
+        discount: d, customer: typeof h.customer === "string" ? h.customer : "", total: Number(h.total) || 0 };
+    }) : [];
+  })(mem.get("galla-held"));
+  var lastNo = G.sales().reduce(function (m, s) { return Math.max(m, +s.no.slice(2) || 0); }, 10482);
   var saleNo = function () { return "R-" + (lastNo + 1); };
 
   /* ---------- Totals ---------- */
@@ -108,7 +128,10 @@
     else if (e.target.closest("[data-rm]")) setQty(i, 0);
   });
   linesBox.addEventListener("change", function (e) {
-    if (e.target.matches("[data-qty]")) setQty(+e.target.closest("[data-line]").dataset.line, e.target.value);
+    if (!e.target.matches("[data-qty]")) return;
+    // An empty or unreadable quantity puts the old one back; 0 removes the line
+    if (e.target.value.trim() === "" || isNaN(Number(e.target.value))) { render(); return; }
+    setQty(+e.target.closest("[data-line]").dataset.line, e.target.value);
   });
 
   /* ---------- Search, barcode and category filter ---------- */
@@ -216,8 +239,17 @@
     if (r) {
       if (cart.length) { toast("Finish or hold the current sale first"); return; }
       var h = heldOrders.splice(+r.dataset.resume, 1)[0];
-      cart = h.cart; discount = h.discount; customerSel.value = h.customer || "";
-      mem.set("galla-held", heldOrders); closeModal("held-orders"); render(); toast("Held sale resumed");
+      // Stock may have been sold since the sale was held: lower quantities to what is left
+      var changed = [];
+      cart = h.cart.filter(function (l) {
+        var left = products[l.id].stock;
+        if (l.qty > left) { changed.push(left > 0 ? l.name + " (only " + left + " left)" : l.name + " (out of stock)"); l.qty = left; }
+        return l.qty > 0;
+      });
+      discount = h.discount;
+      customerSel.value = $$("option", customerSel).some(function (o) { return o.value === h.customer; }) ? h.customer : "";
+      mem.set("galla-held", heldOrders); closeModal("held-orders"); render();
+      toast(changed.length ? "Held sale resumed. Changed to match stock: " + changed.join(", ") : "Held sale resumed");
     } else if (d) {
       heldOrders.splice(+d.dataset.drop, 1); mem.set("galla-held", heldOrders); renderHeld(); render();
     }
@@ -278,12 +310,9 @@
       subtotal: t.subtotal, discount: t.discount, taxRate: t.taxRate, tax: t.tax, total: t.total
     };
     saveSale(sale); lastSale = sale; lastNo++;
-    // Lower the stock shown on the tiles
-    cart.forEach(function (l) {
-      var p = products[l.id]; p.stock -= l.qty;
-      var st = $(".st", p.tile); st.textContent = p.stock > 0 ? p.stock + " left" : "Out of stock";
-      st.classList.toggle("low", p.stock > 0 && p.stock <= 10); p.tile.disabled = p.stock <= 0;
-    });
+    // Lower the stock on the tiles and remember it (localStorage "galla-stock"), so it stays lower after a reload
+    G.recordSold(cart.map(function (l) { return { sku: products[l.id].sku, qty: l.qty }; }));
+    cart.forEach(function (l) { var p = products[l.id]; p.stock = Math.max(0, p.stock - l.qty); showTileStock(p); });
     closeModal("payment"); closeSheet(false);
     $("[data-receipt]").innerHTML = G.receipt(sale);
     $$("[data-receipt-title]").forEach(function (el) { el.textContent = "Sale complete · " + sale.no; });

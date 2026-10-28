@@ -150,6 +150,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .mono, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
 table { font-variant-numeric: tabular-nums; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* The "Skip to content" link appears when it gets keyboard focus */
+a.sr-only:focus { position: fixed; top: 10px; left: 10px; z-index: 200; width: auto; height: auto; clip: auto; overflow: visible; padding: 10px 16px; border-radius: var(--r-md); background: var(--ink); color: var(--bg); font-weight: 600; box-shadow: var(--focus); }
 hr { border: 0; border-top: 1px solid var(--line); margin: 20px 0; }
 
 /* 4. Layout ------------------------------------------------------------ */
@@ -350,7 +352,8 @@ p a:not(.btn), .check a { text-decoration: underline; text-underline-offset: 2px
 .table-tools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 16px 20px; border-bottom: 1px solid var(--line); }
 .table-tools .input, .table-tools .select { height: 38px; width: auto; }
 .table-tools .input { min-width: 240px; flex: 1; max-width: 340px; }
-.pager { display: flex; gap: 4px; }
+.pager { display: flex; flex-wrap: wrap; gap: 4px; }
+.pager-gap { min-width: 18px; height: 34px; display: inline-grid; place-items: center; color: var(--ink-3); }
 .pager button { min-width: 34px; height: 34px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-weight: 600; font-size: 13px; }
 .pager button.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .pager button:disabled { opacity: .4; cursor: default; }
@@ -426,6 +429,8 @@ body:has(.content-pos) .toasts { bottom: auto; top: calc(var(--topbar-h) + 14px)
 .progress.tone-danger > span { background: var(--danger); }
 .list { list-style: none; margin: 0; padding: 0; }
 .list > li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.list > li > .person, .person > div { min-width: 0; }
+.list > li > b, .list > li > .badge { flex-shrink: 0; }
 .list > li:last-child { border-bottom: 0; padding-bottom: 0; }
 .list > li:first-child { padding-top: 0; }
 .muted { color: var(--ink-3); }
@@ -598,6 +603,12 @@ body:has(.content-pos) .toasts { bottom: auto; top: calc(var(--topbar-h) + 14px)
 
 /* Receipt (thermal 80 mm) */
 .receipt-stage { background: var(--surface-2); padding: 22px 16px 28px; display: grid; place-items: center; }
+/* Long names typed into forms wrap instead of widening the page */
+.person b, .person small, .cat-card h3, .cat-card p, .sup dd, .receipt, .notif p, td { overflow-wrap: anywhere; }
+.user-btn .who b { display: block; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.receipt-missing { text-align: center; max-width: 340px; padding: 40px 8px; color: var(--ink-2); }
+.receipt-missing b { display: block; color: var(--ink); font-size: 17px; margin-bottom: 6px; }
+.receipt-missing p { margin: 0 0 16px; }
 .receipt {
   --paper: #fffdf8;
   width: 100%; max-width: 310px; background: var(--paper); color: #1f1d19;
@@ -741,6 +752,8 @@ body:has(.content-pos) .toasts { bottom: auto; top: calc(var(--topbar-h) + 14px)
   .pos-bar, .chips { padding-left: 14px; padding-right: 14px; }
   .ptiles { padding-left: 14px; padding-right: 14px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
   .pay-due b { font-size: 34px; }
+  .pager button { min-width: 30px; height: 32px; }
+  .pager-gap { min-width: 12px; height: 32px; }
 }
 @page { margin: 12mm; }
 @page invoice { size: A4; margin: 12mm; }
